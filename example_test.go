@@ -1,6 +1,7 @@
 package spider_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -28,6 +29,9 @@ func Example() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(nn.Path)
-	fmt.Println(nn)
+	buf, err := json.Marshal(nn)
+	if err != nil {
+		log.Fatal("->", err)
+	}
+	fmt.Println("->", buf)
 }

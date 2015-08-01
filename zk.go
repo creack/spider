@@ -1,6 +1,12 @@
 package spider
 
 import (
+	"log"
+	"os"
+	"time"
+
+	"github.com/samuel/go-zookeeper/zk"
+
 	"encoding/json"
 	"fmt"
 	gopath "path"
@@ -9,26 +15,40 @@ import (
 	"strings"
 )
 
-// Node represent the configuration tree.
-type Node struct {
-	Path     string  `json:"path"`               // Path within the tree
-	Data     Data    `json:"data,omitempty"`     // Data of the current node. If not empty, there is no children.
-	Children []*Node `json:"children,omitempty"` // Children of the current node. If not empty, there is no Data.
-	Parent   *Node   `json:"-"`                  // Parent of the current node. If empty, the node is the root.
+var conn *zk.Conn
+
+func init() {
+	c, _, err := zk.Connect([]string{os.Getenv("DOCKER_IP")}, 30*time.Second)
+	if err != nil {
+		log.Fatal(err)
+	}
+	conn = c
+}
+
+type ZK struct {
+	Path     string `json:"path"`               // Path within the tree
+	Data     Data   `json:"data,omitempty"`     // Data of the current node. If not empty, there is no children.
+	Children []*ZK  `json:"children,omitempty"` // Children of the current node. If not empty, there is no Data.
+	Parent   *ZK    `json:"-"`                  // Parent of the current node. If empty, the node is the root.
 
 	isArray bool // flag to know if we are in a map int or an array
 }
 
-// NewNode creates a root node and returns it.
-func NewNode() *Node {
-	return &Node{
+// NewZK creates a root node and returns it.
+func NewZK() *ZK {
+	return &ZK{
 		Path:     "/",
-		Children: []*Node{},
+		Children: []*ZK{},
 	}
 }
 
 // Get fetches a node from the provider.
-func (n *Node) Get(path string) (*Node, error) {
+func (n *ZK) Get(path string) (*ZK, error) {
+	val, _, err := conn.Get("/")
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("---> %s\n", val)
 	if path == "/" && n.Path == "/" {
 		return n, nil
 	}
@@ -36,7 +56,7 @@ func (n *Node) Get(path string) (*Node, error) {
 	return n.get(path, 1)
 }
 
-func (n *Node) get(path string, depth int) (*Node, error) {
+func (n *ZK) get(path string, depth int) (*ZK, error) {
 	parts := strings.SplitN(path, "/", depth+1)
 	if len(parts) < depth {
 		return n, nil
@@ -54,7 +74,7 @@ func (n *Node) get(path string, depth int) (*Node, error) {
 }
 
 // MarshalJSON implements json.Marshaler interface.
-func (n *Node) MarshalJSON() ([]byte, error) {
+func (n *ZK) MarshalJSON() ([]byte, error) {
 	if len(n.Children) == 0 {
 		return json.Marshal(n.Data)
 	}
@@ -84,13 +104,13 @@ func (n *Node) MarshalJSON() ([]byte, error) {
 }
 
 // String returns a json formatted representation of the tree.
-func (n *Node) String() string {
+func (n *ZK) String() string {
 	buf, _ := json.Marshal(n)
 	return string(buf)
 }
 
 // createEmpty constructs the tree for the given path.
-func (n *Node) createEmpty(path string, depth int) (*Node, error) {
+func (n *ZK) createEmpty(path string, depth int) (*ZK, error) {
 	// If the current node has the expected path,
 	// everything is already created, do nothing.
 	if "/"+path == n.Path {
@@ -112,12 +132,12 @@ func (n *Node) createEmpty(path string, depth int) (*Node, error) {
 		}
 	}
 	if n.Data != nil {
-		return nil, fmt.Errorf("Node is a leaf, can't create children")
+		return nil, fmt.Errorf("ZK is a leaf, can't create children")
 	}
 	// Create the new child
-	newChild := &Node{
+	newChild := &ZK{
 		Path:     childPath,
-		Children: []*Node{},
+		Children: []*ZK{},
 		Parent:   n,
 	}
 	n.Children = append(n.Children, newChild)
@@ -126,9 +146,9 @@ func (n *Node) createEmpty(path string, depth int) (*Node, error) {
 	return newChild.createEmpty(path, depth+1)
 }
 
-// func (n *Node) Create(path string, data Data) error {
+// func (n *ZK) Create(path string, data Data) error {
 // 	path = TrimSlash(path)
-// 	newNode, err := n.createEmpty(path, 1)
+// 	newZK, err := n.createEmpty(path, 1)
 // 	if err != nil {
 // 		return err
 // 	}
@@ -138,9 +158,9 @@ func (n *Node) createEmpty(path string, depth int) (*Node, error) {
 // Create adds or set the given data to the path.
 // This will create all sub-nodes as necessary.
 // Returns the newly created node.
-func (n *Node) Create(path string, data Data) error {
+func (n *ZK) Create(path string, data Data) error {
 	path = TrimSlash(path)
-	newNode, err := n.createEmpty(path, 1)
+	newZK, err := n.createEmpty(path, 1)
 	if err != nil {
 		return err
 	}
@@ -160,7 +180,7 @@ func (n *Node) Create(path string, data Data) error {
 		if _, ok := data.([]byte); ok {
 			break
 		}
-		newNode.isArray = true
+		newZK.isArray = true
 		for i := 0; i < val.Len(); i++ {
 			if err := n.Create(gopath.Join(path, strconv.FormatInt(int64(i), 10)), val.Index(i).Interface()); err != nil {
 				return err
@@ -168,9 +188,9 @@ func (n *Node) Create(path string, data Data) error {
 		}
 		return nil
 	}
-	if len(newNode.Children) != 0 {
+	if len(newZK.Children) != 0 {
 		return fmt.Errorf("node has children, can't set data")
 	}
-	newNode.Data = data
+	newZK.Data = data
 	return nil
 }
