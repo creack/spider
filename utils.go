@@ -11,7 +11,7 @@ func TrimBytePrefix(str string, prefix byte) string {
 // TrimByteSuffix trims the given suffix.
 func TrimByteSuffix(str string, suffix byte) string {
 	if len(str) > 0 && str[len(str)-1] == suffix {
-		str = str[:len(str)]
+		str = str[:len(str)-1]
 	}
 	return str
 }
