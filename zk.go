@@ -44,12 +44,12 @@ func NewZK() *ZK {
 
 // Get fetches a node from the provider.
 func (n *ZK) Get(path string) (*ZK, error) {
-	val, _, err := conn.Get("/")
-	if err != nil {
-		return nil, err
-	}
-	fmt.Printf("---> %s\n", val)
 	if path == "/" && n.Path == "/" {
+		val, _, err := conn.Get("/")
+		if err != nil {
+			return nil, err
+		}
+		n.Data = val
 		return n, nil
 	}
 	path = TrimSlash(path)
@@ -58,10 +58,18 @@ func (n *ZK) Get(path string) (*ZK, error) {
 
 func (n *ZK) get(path string, depth int) (*ZK, error) {
 	parts := strings.SplitN(path, "/", depth+1)
+	childPath := "/" + strings.Join(parts[:depth], "/")
 	if len(parts) < depth {
+		childPath = TrimByteSuffix(childPath, '/')
+		val, _, err := conn.Get(childPath)
+		if err != nil {
+			return nil, fmt.Errorf("[zk.Get] %s (%s)", childPath, err)
+		}
+		if err := json.Unmarshal(val, &n.Data); err != nil {
+			return nil, err
+		}
 		return n, nil
 	}
-	childPath := "/" + strings.Join(parts[:depth], "/")
 
 	// Check if the child exists
 	for _, child := range n.Children {
@@ -134,6 +142,17 @@ func (n *ZK) createEmpty(path string, depth int) (*ZK, error) {
 	if n.Data != nil {
 		return nil, fmt.Errorf("ZK is a leaf, can't create children")
 	}
+
+	// TODO: fix this race condition.
+	exist, _, err := conn.Exists(childPath)
+	if err != nil {
+		return nil, fmt.Errorf("[zk.Exists] %s", err)
+	}
+	if !exist {
+		if _, err := conn.Create(childPath, nil, 0, zk.WorldACL(zk.PermAll)); err != nil {
+			return nil, fmt.Errorf("[zk.Create] %s", err)
+		}
+	}
 	// Create the new child
 	newChild := &ZK{
 		Path:     childPath,
@@ -190,6 +209,13 @@ func (n *ZK) Create(path string, data Data) error {
 	}
 	if len(newZK.Children) != 0 {
 		return fmt.Errorf("node has children, can't set data")
+	}
+	buf, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	if _, err := conn.Set(newZK.Path, buf, -1); err != nil {
+		return fmt.Errorf("[zk.Set] %s", err)
 	}
 	newZK.Data = data
 	return nil
