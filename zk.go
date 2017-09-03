@@ -178,7 +178,12 @@ func (n *ZK) createEmpty(path string, depth int) (*ZK, error) {
 // This will create all sub-nodes as necessary.
 // Returns the newly created node.
 func (n *ZK) Create(path string, data Data) error {
+	return n.create(path, data)
+}
+
+func (n *ZK) create(path string, data Data) error {
 	path = TrimSlash(path)
+
 	newZK, err := n.createEmpty(path, 1)
 	if err != nil {
 		return err
@@ -189,7 +194,7 @@ func (n *ZK) Create(path string, data Data) error {
 		return fmt.Errorf("unsuppoted typed: channel")
 	case reflect.Map:
 		for _, key := range val.MapKeys() {
-			if err := n.Create(gopath.Join(path, fmt.Sprintf("%v", key.Interface())), val.MapIndex(key).Interface()); err != nil {
+			if err := n.create(gopath.Join(path, fmt.Sprintf("%v", key.Interface())), val.MapIndex(key).Interface()); err != nil {
 				return err
 			}
 		}
@@ -201,7 +206,7 @@ func (n *ZK) Create(path string, data Data) error {
 		}
 		newZK.isArray = true
 		for i := 0; i < val.Len(); i++ {
-			if err := n.Create(gopath.Join(path, strconv.FormatInt(int64(i), 10)), val.Index(i).Interface()); err != nil {
+			if err := n.create(gopath.Join(path, strconv.FormatInt(int64(i), 10)), val.Index(i).Interface()); err != nil {
 				return err
 			}
 		}

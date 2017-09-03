@@ -19,7 +19,7 @@ type Data interface{}
 // NewConfigTree initialize the configuration tree and return the root node.
 func NewConfigTree() *Node {
 	return &Node{
-		Path:     "/",
+		Name:     "/",
 		Children: []*Node{},
 	}
 }

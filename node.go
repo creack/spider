@@ -11,7 +11,7 @@ import (
 
 // Node represent the configuration tree.
 type Node struct {
-	Path     string  `json:"path"`               // Path within the tree
+	Name     string  `json:"path"`               // Path within the tree
 	Data     Data    `json:"data,omitempty"`     // Data of the current node. If not empty, there is no children.
 	Children []*Node `json:"children,omitempty"` // Children of the current node. If not empty, there is no Data.
 	Parent   *Node   `json:"-"`                  // Parent of the current node. If empty, the node is the root.
@@ -22,14 +22,14 @@ type Node struct {
 // NewNode creates a root node and returns it.
 func NewNode() *Node {
 	return &Node{
-		Path:     "/",
+		Name:     "/",
 		Children: []*Node{},
 	}
 }
 
 // Get fetches a node from the provider.
 func (n *Node) Get(path string) (*Node, error) {
-	if path == "/" && n.Path == "/" {
+	if path == "/" && n.Name == "/" {
 		return n, nil
 	}
 	path = TrimSlash(path)
@@ -46,7 +46,7 @@ func (n *Node) get(path string, depth int) (*Node, error) {
 	// Check if the child exists
 	for _, child := range n.Children {
 		// If it does, go to next level.
-		if childPath == child.Path {
+		if childPath == child.Name {
 			return child.get(path, depth+1)
 		}
 	}
@@ -72,7 +72,7 @@ func (n *Node) MarshalJSON() ([]byte, error) {
 		if n.isArray {
 			ret += string(buf) + ","
 		} else {
-			ret += `"` + gopath.Base(child.Path) + `":` + string(buf) + ","
+			ret += `"` + gopath.Base(child.Name) + `":` + string(buf) + ","
 		}
 	}
 	if n.isArray {
@@ -90,10 +90,10 @@ func (n *Node) String() string {
 }
 
 // createEmpty constructs the tree for the given path.
-func (n *Node) createEmpty(path string, depth int) (*Node, error) {
+func (n *Node) createEmpty2(path string, depth int) (*Node, error) {
 	// If the current node has the expected path,
 	// everything is already created, do nothing.
-	if "/"+path == n.Path {
+	if "/"+path == n.Name {
 		return n, nil
 	}
 
@@ -107,8 +107,8 @@ func (n *Node) createEmpty(path string, depth int) (*Node, error) {
 	// Check if the child exists
 	for _, child := range n.Children {
 		// If it does, go to next level.
-		if childPath == child.Path {
-			return child.createEmpty(path, depth+1)
+		if childPath == child.Name {
+			return child.createEmpty2(path, depth+1)
 		}
 	}
 	if n.Data != nil {
@@ -116,14 +116,14 @@ func (n *Node) createEmpty(path string, depth int) (*Node, error) {
 	}
 	// Create the new child
 	newChild := &Node{
-		Path:     childPath,
+		Name:     childPath,
 		Children: []*Node{},
 		Parent:   n,
 	}
 	n.Children = append(n.Children, newChild)
 
 	// Go to next level.
-	return newChild.createEmpty(path, depth+1)
+	return newChild.createEmpty2(path, depth+1)
 }
 
 // func (n *Node) Create(path string, data Data) error {
@@ -135,12 +135,12 @@ func (n *Node) createEmpty(path string, depth int) (*Node, error) {
 // 	return n.create(path, data)
 // }
 
-// Create adds or set the given data to the path.
+// Create2 adds or set the given data to the path.
 // This will create all sub-nodes as necessary.
 // Returns the newly created node.
-func (n *Node) Create(path string, data Data) error {
+func (n *Node) Create2(path string, data Data) error {
 	path = TrimSlash(path)
-	newNode, err := n.createEmpty(path, 1)
+	newNode, err := n.createEmpty2(path, 1)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (n *Node) Create(path string, data Data) error {
 		return fmt.Errorf("unsuppoted typed: channel")
 	case reflect.Map:
 		for _, key := range val.MapKeys() {
-			if err := n.Create(gopath.Join(path, fmt.Sprintf("%v", key.Interface())), val.MapIndex(key).Interface()); err != nil {
+			if err := n.Create2(gopath.Join(path, fmt.Sprintf("%v", key.Interface())), val.MapIndex(key).Interface()); err != nil {
 				return err
 			}
 		}
@@ -162,7 +162,7 @@ func (n *Node) Create(path string, data Data) error {
 		}
 		newNode.isArray = true
 		for i := 0; i < val.Len(); i++ {
-			if err := n.Create(gopath.Join(path, strconv.FormatInt(int64(i), 10)), val.Index(i).Interface()); err != nil {
+			if err := n.Create2(gopath.Join(path, strconv.FormatInt(int64(i), 10)), val.Index(i).Interface()); err != nil {
 				return err
 			}
 		}
@@ -172,5 +172,12 @@ func (n *Node) Create(path string, data Data) error {
 		return fmt.Errorf("node has children, can't set data")
 	}
 	newNode.Data = data
+	return nil
+}
+
+// Create .
+func (n *Node) Create(path string, data Data) error {
+	parts := strings.Split(TrimSlash(path), "/")
+	_ = parts
 	return nil
 }
